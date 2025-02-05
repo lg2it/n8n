@@ -308,8 +308,13 @@ async function initializeData() {
 async function initializeRoute(force = false) {
 	// In case the workflow got saved we do not have to run init
 	// as only the route changed but all the needed data is already loaded
-	if (route.params.action === 'workflowSave') {
+
+	if (route.query.action === 'workflowSave') {
 		uiStore.stateIsDirty = false;
+		// Remove the action from the query
+		await router.replace({
+			query: { ...route.query, action: undefined },
+		});
 		return;
 	}
 
@@ -344,6 +349,10 @@ async function initializeRoute(force = false) {
 		if (!isAlreadyInitialized) {
 			historyStore.reset();
 
+			if (!isDemoRoute.value) {
+				await loadCredentials();
+			}
+
 			// If there is no workflow id, treat it as a new workflow
 			if (isNewWorkflowRoute.value || !workflowId.value) {
 				if (route.meta?.nodeView === true) {
@@ -354,12 +363,8 @@ async function initializeRoute(force = false) {
 
 			await initializeWorkspaceForExistingWorkflow(workflowId.value);
 
-			await loadCredentials();
-
 			void nextTick(() => {
-				nodeHelpers.updateNodesInputIssues();
-				nodeHelpers.updateNodesCredentialsIssues();
-				nodeHelpers.updateNodesParameterIssues();
+				updateNodesIssues();
 			});
 		}
 
@@ -389,9 +394,7 @@ async function initializeWorkspaceForExistingWorkflow(id: string) {
 			trackOpenWorkflowFromOnboardingTemplate();
 		}
 
-		await projectsStore.setProjectNavActiveIdByWorkflowHomeProject(
-			editableWorkflow.value.homeProject,
-		);
+		await projectsStore.setProjectNavActiveIdByWorkflowHomeProject(workflowData.homeProject);
 	} catch (error) {
 		toast.showError(error, i18n.baseText('openWorkflow.workflowNotFoundError'));
 
@@ -402,6 +405,12 @@ async function initializeWorkspaceForExistingWorkflow(id: string) {
 		uiStore.nodeViewInitialized = true;
 		initializedWorkflowId.value = workflowId.value;
 	}
+}
+
+function updateNodesIssues() {
+	nodeHelpers.updateNodesInputIssues();
+	nodeHelpers.updateNodesCredentialsIssues();
+	nodeHelpers.updateNodesParameterIssues();
 }
 
 /**
@@ -815,8 +824,8 @@ function onClickNodeAdd(source: string, sourceHandle: string) {
 async function loadCredentials() {
 	let options: { workflowId: string } | { projectId: string };
 
-	if (editableWorkflow.value) {
-		options = { workflowId: editableWorkflow.value.id };
+	if (workflowId.value) {
+		options = { workflowId: workflowId.value };
 	} else {
 		const queryParam =
 			typeof route.query?.projectId === 'string' ? route.query?.projectId : undefined;
@@ -1149,6 +1158,10 @@ async function onOpenExecution(executionId: string) {
 	if (!data) {
 		return;
 	}
+
+	void nextTick(() => {
+		updateNodesIssues();
+	});
 
 	canvasStore.stopLoading();
 	fitView();
@@ -1695,7 +1708,6 @@ onBeforeUnmount(() => {
 		:event-bus="canvasEventBus"
 		:read-only="isCanvasReadOnly"
 		:executing="isWorkflowRunning"
-		:show-bug-reporting-button="!isDemoRoute || !!executionsStore.activeExecution"
 		:key-bindings="keyBindingsEnabled"
 		@update:nodes:position="onUpdateNodesPosition"
 		@update:node:position="onUpdateNodePosition"
